@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HTMLucinate</title>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #eee; }
+
+  /* Navbar */
+  .navbar {
+    position: sticky; top: 0; z-index: 100;
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px;
+    background: #16213e; border-bottom: 1px solid #0f3460;
+    min-height: 48px;
+  }
+  .navbar button {
+    background: #0f3460; color: #e94560; border: 1px solid #e94560;
+    border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 14px;
+    white-space: nowrap; transition: background 0.15s;
+  }
+  .navbar button:hover { background: #e94560; color: #fff; }
+  .navbar button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .omnibar {
+    flex: 1; min-width: 0;
+    padding: 8px 14px; border-radius: 20px;
+    border: 1px solid #0f3460; background: #0a0a1a; color: #eee;
+    font-size: 15px; outline: none;
+  }
+  .omnibar:focus { border-color: #e94560; }
+
+  /* Hamburger (mobile) */
+  .hamburger { display: none; font-size: 20px; }
+  .nav-buttons { display: flex; gap: 8px; align-items: center; }
+
+  @media (max-width: 640px) {
+    .hamburger { display: inline-block; }
+    .nav-buttons { display: none; }
+    .nav-buttons.open { display: flex; position: absolute; top: 48px; left: 0; right: 0; background: #16213e; padding: 8px 12px; border-bottom: 1px solid #0f3460; flex-wrap: wrap; }
+  }
+
+  /* Body / image area */
+  .browser-body {
+    flex: 1; display: flex; justify-content: center; align-items: flex-start;
+    overflow: hidden; position: relative;
+    height: calc(100vh - 50px);
+  }
+  .browser-body img {
+    max-width: 100%; max-height: 100%; object-fit: contain; cursor: crosshair;
+  }
+
+  /* Loading overlay */
+  .loading-overlay {
+    position: absolute; inset: 0;
+    background: rgba(10, 10, 26, 0.85);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 50;
+  }
+  .spinner {
+    width: 48px; height: 48px; border: 4px solid #0f3460;
+    border-top-color: #e94560; border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-overlay p { margin-top: 16px; color: #e94560; font-size: 14px; }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal {
+    background: #16213e; border: 1px solid #0f3460; border-radius: 12px;
+    width: 90vw; max-width: 700px; max-height: 80vh;
+    display: flex; flex-direction: column;
+  }
+  .modal-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px; border-bottom: 1px solid #0f3460;
+  }
+  .modal-header h2 { font-size: 16px; color: #e94560; }
+  .modal-body {
+    flex: 1; overflow-y: auto; padding: 12px 16px;
+    font-family: monospace; font-size: 12px; line-height: 1.6;
+  }
+  .log-entry { margin-bottom: 6px; }
+  .log-entry .kind { color: #e94560; font-weight: bold; }
+  .log-entry .content { color: #ccc; }
+</style>
+</head>
+<body x-data="app()" x-init="init()">
+
+<!-- Navbar -->
+<nav class="navbar">
+  <button class="hamburger" @click="menuOpen = !menuOpen">☰</button>
+
+  <form @submit.prevent="submitQuery()" style="display:contents; flex:1; min-width:0;">
+    <input class="omnibar" type="text" x-model="omnibarValue" placeholder="Search or enter URL..." :disabled="loading">
+  </form>
+
+  <div class="nav-buttons" :class="{ open: menuOpen }">
+    <button @click="goBack()" :disabled="loading" title="Back">◀ Back</button>
+    <button @click="pageDown()" :disabled="loading" title="Page Down">⇟ PgDn</button>
+    <button @click="showLog = true" title="Agent Log">📋 Log</button>
+  </div>
+</nav>
+
+<!-- Browser body -->
+<div class="browser-body">
+  <template x-if="loading">
+    <div class="loading-overlay">
+      <div class="spinner"></div>
+      <p x-text="loadingStatus">Rendering page...</p>
+    </div>
+  </template>
+  <img
+    x-show="currentImage"
+    :src="'data:image/png;base64,' + currentImage"
+    @click="handleImageClick($event)"
+  >
+</div>
+
+<!-- Agent Log Modal -->
+<template x-if="showLog">
+  <div class="modal-backdrop" @click.self="showLog = false">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Agent Log</h2>
+        <button @click="showLog = false" style="background:none;border:none;color:#e94560;font-size:20px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body" x-ref="logBody">
+        <template x-for="(entry, i) in logEntries" :key="i">
+          <div class="log-entry">
+            <span class="kind" x-text="'[' + entry.kind + ']'"></span>
+            <span class="content" x-text="entry.content"></span>
+          </div>
+        </template>
+        <template x-if="logEntries.length === 0">
+          <p style="color:#666;">No log entries yet.</p>
+        </template>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+function app() {
+  return {
+    sessionId: null,
+    omnibarValue: '',
+    currentImage: null,
+    loading: false,
+    loadingStatus: 'Rendering page...',
+    menuOpen: false,
+    showLog: false,
+    logEntries: [],
+    eventSource: null,
+
+    async init() {
+      // Create a new session on page load
+      const resp = await fetch('/api/session', { method: 'POST' });
+      const data = await resp.json();
+      this.sessionId = data.session_id;
+      this.currentImage = data.image;
+      this.omnibarValue = data.url;
+      this.connectSSE();
+    },
+
+    connectSSE() {
+      if (this.eventSource) this.eventSource.close();
+      this.eventSource = new EventSource(`/api/session/${this.sessionId}/log`);
+      this.eventSource.onmessage = (e) => {
+        try {
+          const entry = JSON.parse(e.data);
+          this.logEntries.push(entry);
+          this.loadingStatus = entry.content;
+          // Auto-scroll log if modal is open
+          this.$nextTick(() => {
+            if (this.$refs.logBody) {
+              this.$refs.logBody.scrollTop = this.$refs.logBody.scrollHeight;
+            }
+          });
+        } catch {}
+      };
+    },
+
+    async submitQuery() {
+      if (!this.omnibarValue.trim() || this.loading) return;
+      this.loading = true;
+      this.loadingStatus = 'Sending query...';
+      try {
+        const resp = await fetch(`/api/session/${this.sessionId}/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: this.omnibarValue,
+            viewport_width: window.innerWidth,
+            viewport_height: window.innerHeight - 50,
+          }),
+        });
+        if (!resp.ok) {
+          const err = await resp.json();
+          alert('Error: ' + (err.error || 'Unknown error'));
+          return;
+        }
+        const data = await resp.json();
+        this.currentImage = data.image;
+        this.omnibarValue = data.url;
+      } catch (e) {
+        alert('Request failed: ' + e.message);
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async handleImageClick(event) {
+      if (this.loading) return;
+      const rect = event.target.getBoundingClientRect();
+      const x = (event.clientX - rect.left) / rect.width;
+      const y = (event.clientY - rect.top) / rect.height;
+
+      this.loading = true;
+      this.loadingStatus = 'Processing click...';
+      try {
+        const resp = await fetch(`/api/session/${this.sessionId}/click`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            x, y,
+            viewport_width: window.innerWidth,
+            viewport_height: window.innerHeight - 50,
+          }),
+        });
+        if (!resp.ok) {
+          const err = await resp.json();
+          alert('Error: ' + (err.error || 'Unknown error'));
+          return;
+        }
+        const data = await resp.json();
+        this.currentImage = data.image;
+        this.omnibarValue = data.url;
+      } catch (e) {
+        alert('Request failed: ' + e.message);
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async goBack() {
+      if (this.loading) return;
+      try {
+        const resp = await fetch(`/api/session/${this.sessionId}/back`, {
+          method: 'POST',
+        });
+        if (!resp.ok) {
+          const err = await resp.json();
+          alert(err.error || 'Cannot go back');
+          return;
+        }
+        const data = await resp.json();
+        this.currentImage = data.image;
+        this.omnibarValue = data.url;
+      } catch (e) {
+        alert('Request failed: ' + e.message);
+      }
+    },
+
+    async pageDown() {
+      if (this.loading) return;
+      this.loading = true;
+      this.loadingStatus = 'Scrolling down...';
+      try {
+        const resp = await fetch(`/api/session/${this.sessionId}/pagedown`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            viewport_width: window.innerWidth,
+            viewport_height: window.innerHeight - 50,
+          }),
+        });
+        if (!resp.ok) {
+          const err = await resp.json();
+          alert('Error: ' + (err.error || 'Unknown error'));
+          return;
+        }
+        const data = await resp.json();
+        this.currentImage = data.image;
+        this.omnibarValue = data.url;
+      } catch (e) {
+        alert('Request failed: ' + e.message);
+      } finally {
+        this.loading = false;
+      }
+    },
+  };
+}
+</script>
+</body>
+</html>

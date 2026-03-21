@@ -1,0 +1,22 @@
+[package]
+name = "htmlucinate"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = { version = "0.8", features = ["macros"] }
+base64 = "0.22"
+clap = { version = "4", features = ["derive", "env"] }
+dashmap = "6"
+image = "0.25"
+reqwest = { version = "0.12", features = ["json"] }
+rig-core = { version = "0.33", features = ["image"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2.0.18"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1.18", features = ["sync"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
