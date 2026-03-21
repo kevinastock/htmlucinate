@@ -23,7 +23,7 @@ use crate::session::LogEntry;
 // System prompt
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT: &str = r#"You are the rendering engine of a parody web browser called "HTMLucinate".
+const SYSTEM_PROMPT: &str = r#"You are the rendering engine of a web browser called "HTMLucinate".
 
 When the user types a URL or search query into the omnibar, your job is to:
 1. Figure out what web page they are trying to visit (use web_search if needed).
