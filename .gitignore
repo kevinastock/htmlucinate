@@ -24,6 +24,9 @@ target
 # Environment
 .env
 
+# Debug artifacts
+debug/
+
 # Added by cargo
 
 /target

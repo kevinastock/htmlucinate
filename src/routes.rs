@@ -223,6 +223,23 @@ async fn handle_click(
         let click_img = agent::draw_click_circle(&session.current_image, payload.x, payload.y)
             .map_err(|e| AppError::Internal(format!("Failed to draw click circle: {e}")))?;
 
+        // Save click-annotated image to debug/ for inspection
+        let debug_dir = std::path::Path::new("debug");
+        if std::fs::create_dir_all(debug_dir).is_ok() {
+            let filename = format!(
+                "click_{id}_{}.png",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+            );
+            if let Err(e) = std::fs::write(debug_dir.join(&filename), &click_img) {
+                tracing::warn!("Failed to save debug click image: {e}");
+            } else {
+                tracing::info!("Saved click image to debug/{filename}");
+            }
+        }
+
         (
             rig_history_from_session(&session),
             session.log_tx.clone(),

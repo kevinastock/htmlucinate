@@ -5,7 +5,7 @@ use rig::OneOrMany;
 use rig::agent::{HookAction, PromptHook, ToolCallHookAction};
 use rig::client::CompletionClient;
 use rig::completion::message::{
-    DocumentSourceKind, Image, ImageMediaType, Message, Text, UserContent,
+    AssistantContent, DocumentSourceKind, Image, ImageMediaType, Message, Text, UserContent,
 };
 use rig::completion::{CompletionModel, CompletionResponse, Prompt, ToolDefinition};
 use rig::image_generation::ImageGenerationModel;
@@ -23,10 +23,13 @@ use crate::session::LogEntry;
 // System prompt
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT: &str = r#"You are the rendering engine of a web browser called "HTMLucinate".
+const SYSTEM_PROMPT: &str = r#"You are the rendering engine of a parody web browser called "HTMLucinate".
 
 When the user types a URL or search query into the omnibar, your job is to:
-1. Figure out what web page they are trying to visit (use web_search if needed).
+1. Figure out what web page they are trying to visit. If you need to search, you can use
+   fetch_url with the DuckDuckGo API: https://api.duckduckgo.com/?q=YOUR+QUERY&format=json&no_html=1
+   This returns instant answers, related topics, and abstracts that can help you understand what
+   the user is looking for.
 2. Optionally fetch the real page with fetch_url to get inspiration for layout/content.
 3. Call update_page with a detailed visual description of what the rendered page looks like.
 
@@ -94,16 +97,78 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
     async fn on_completion_response(
         &self,
         _prompt: &Message,
-        _response: &CompletionResponse<M::Response>,
+        response: &CompletionResponse<M::Response>,
     ) -> HookAction {
-        let _ = self.tx.send(LogEntry {
-            kind: "assistant".into(),
-            content: "Agent thinking...".into(),
-        });
+        // Extract text content from the assistant response
+        let mut texts = Vec::new();
+        let mut tool_calls = Vec::new();
+        for item in response.choice.iter() {
+            match item {
+                AssistantContent::Text(t) => texts.push(t.text.clone()),
+                AssistantContent::ToolCall(tc) => {
+                    tool_calls.push(format!("{}()", tc.function.name));
+                }
+                _ => {}
+            }
+        }
+        if !texts.is_empty() {
+            let text = texts.join(" ");
+            let truncated = if text.len() > 500 {
+                format!("{}...", &text[..500])
+            } else {
+                text
+            };
+            let _ = self.tx.send(LogEntry {
+                kind: "assistant".into(),
+                content: truncated,
+            });
+        }
+        if !tool_calls.is_empty() {
+            let _ = self.tx.send(LogEntry {
+                kind: "assistant".into(),
+                content: format!("Agent calling: {}", tool_calls.join(", ")),
+            });
+        }
+        if texts.is_empty() && tool_calls.is_empty() {
+            let _ = self.tx.send(LogEntry {
+                kind: "assistant".into(),
+                content: "Agent responded (no text content)".into(),
+            });
+        }
         HookAction::Continue
     }
 
-    async fn on_completion_call(&self, _prompt: &Message, _history: &[Message]) -> HookAction {
+    async fn on_completion_call(&self, prompt: &Message, history: &[Message]) -> HookAction {
+        // Log what we're sending to the model
+        let prompt_summary = match prompt {
+            Message::User { content } => {
+                let parts: Vec<String> = content
+                    .iter()
+                    .map(|c| match c {
+                        UserContent::Text(t) => {
+                            let s = &t.text;
+                            if s.len() > 200 {
+                                format!("{}...", &s[..200])
+                            } else {
+                                s.clone()
+                            }
+                        }
+                        UserContent::Image(_) => "[image]".to_string(),
+                        _ => "[other]".to_string(),
+                    })
+                    .collect();
+                parts.join(" ")
+            }
+            _ => "system/assistant message".to_string(),
+        };
+        let _ = self.tx.send(LogEntry {
+            kind: "user".into(),
+            content: format!(
+                "Sending to model (history: {} msgs): {}",
+                history.len(),
+                prompt_summary
+            ),
+        });
         HookAction::Continue
     }
 }
@@ -246,6 +311,23 @@ impl Tool for UpdatePage {
 
         let image_bytes = response.image;
 
+        // Save generated image to debug/ for inspection
+        let debug_dir = std::path::Path::new("debug");
+        if std::fs::create_dir_all(debug_dir).is_ok() {
+            let filename = format!(
+                "page_{}.png",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+            );
+            if let Err(e) = std::fs::write(debug_dir.join(&filename), &image_bytes) {
+                warn!("Failed to save debug page image: {e}");
+            } else {
+                info!("Saved page image to debug/{filename}");
+            }
+        }
+
         let mut result = self.result.lock().await;
         *result = Some(UpdatePageResult {
             image_png: image_bytes.clone(),
@@ -316,7 +398,7 @@ pub async fn run_agent(
         content: "Agent started processing...".into(),
     });
 
-    let _response: String = agent
+    let response: String = agent
         .prompt(user_message)
         .with_history(&mut history)
         .max_turns(10)
@@ -324,8 +406,25 @@ pub async fn run_agent(
         .await
         .map_err(|e| {
             warn!("Agent error: {e}");
+            let _ = log_tx.send(LogEntry {
+                kind: "error".into(),
+                content: format!("Agent error: {e}"),
+            });
             AgentRunError::Agent(e.to_string())
         })?;
+
+    // Log the final text response from the agent
+    if !response.is_empty() {
+        let truncated = if response.len() > 500 {
+            format!("{}...", &response[..500])
+        } else {
+            response.clone()
+        };
+        let _ = log_tx.send(LogEntry {
+            kind: "assistant".into(),
+            content: format!("Final response: {truncated}"),
+        });
+    }
 
     let result = result_handle.lock().await.take();
     match result {
