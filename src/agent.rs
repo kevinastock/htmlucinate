@@ -23,15 +23,13 @@ use crate::session::LogEntry;
 // System prompt
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT: &str = r#"You are the rendering engine of a parody web browser called "HTMLucinate".
+const SYSTEM_PROMPT: &str = r#"You are the rendering engine of a web browser called "HTMLucinate". Your job is to produce accurate visual renderings of web pages exactly as a real browser would display them.
 
-When the user types a URL or search query into the omnibar, your job is to:
-1. Figure out what web page they are trying to visit. If you need to search, you can use
+When the user types a URL or search query into the omnibar:
+1. Figure out what web page they are trying to visit. If you need to search, use
    fetch_url with the DuckDuckGo API: https://api.duckduckgo.com/?q=YOUR+QUERY&format=json&no_html=1
-   This returns instant answers, related topics, and abstracts that can help you understand what
-   the user is looking for.
-2. Optionally fetch the real page with fetch_url to get inspiration for layout/content.
-3. Call update_page with a detailed visual description of what the rendered page looks like.
+2. Fetch the real page with fetch_url to get its actual content, layout, and structure.
+3. Call update_page with a detailed visual description of how the page should be rendered.
 
 When the user clicks somewhere on the current page, you'll receive the screenshot with
 a red circle indicating where they clicked. Interpret the click (link, button, etc.)
@@ -42,14 +40,11 @@ via update_page.
 
 Important guidelines:
 - Always call update_page exactly once per user action.
-- The page_description you give to update_page should be a rich, detailed visual description
-  of ONLY the web page content area — the part inside a browser viewport. Do NOT describe
-  browser chrome (address bar, tabs, back/forward buttons, window frame, etc.) — that is
-  handled externally. Just describe the page body content itself.
-- Be creative and humorous — this is a parody browser. Pages should look plausible at first
-  glance but can contain whimsical or absurd details.
-- Include realistic-looking page elements (navigation bars of the website, sidebars, ads,
-  cookie banners, content, images, etc.)
+- Always fetch the real page with fetch_url before rendering. Base your rendering on the actual page content — do not guess or invent content.
+- The page_description should be a faithful, detailed visual description of ONLY the web page content area as it would appear in a browser viewport. Do NOT describe browser chrome (address bar, tabs, back/forward buttons, window frame) — that is handled externally.
+- Render the page accurately: use the real text, real layout, real colors, and real structure from the fetched content. Your goal is to match what a real browser would show as closely as possible.
+- Do NOT add, remove, or modify page content. Do not inject humor, easter eggs, or fictional elements. Render what is actually there.
+- Include all visible page elements: navigation bars, sidebars, footers, ads, banners, images, etc. — but only those that are actually present in the page content.
 "#;
 
 // ---------------------------------------------------------------------------
@@ -243,7 +238,7 @@ impl Tool for FetchUrl {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: "fetch_url".into(),
-            description: "Fetch a URL and return its text content (HTML). Use this to inspect real web pages for layout inspiration.".into(),
+            description: "Fetch a URL and return its text content (HTML). Use this to get the actual content of a web page for accurate rendering.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -302,7 +297,7 @@ impl Tool for UpdatePage {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: "update_page".into(),
-            description: "Render the web page the user sees. Provide the URL for the omnibar and a detailed visual description of the page body content (NOT browser chrome — just the page itself). This calls an image generator to produce the screenshot. You must call this exactly once per user action.".into(),
+            description: "Render the web page the user sees. Provide the URL for the omnibar and a detailed, accurate visual description of the page body content based on the fetched HTML (NOT browser chrome — just the page itself). This calls an image generator to produce the screenshot. You must call this exactly once per user action.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -312,7 +307,7 @@ impl Tool for UpdatePage {
                     },
                     "page_description": {
                         "type": "string",
-                        "description": "A detailed visual description of the web page BODY content as it would appear in the browser viewport. Describe layout, colors, text, images, buttons, navigation elements, etc. Do NOT describe browser chrome (address bar, tabs, window frame) — only the page content itself."
+                        "description": "A detailed, accurate visual description of the web page BODY content as it would appear in the browser viewport, based on the actual fetched HTML. Describe the real layout, colors, text, images, buttons, navigation elements, etc. exactly as they appear on the page. Do NOT describe browser chrome (address bar, tabs, window frame) — only the page content itself. Do NOT invent or add content that isn't in the source."
                     }
                 },
                 "required": ["url", "page_description"]
@@ -342,10 +337,12 @@ impl Tool for UpdatePage {
 
         let image_model = self.openai_client.image_generation_model(&self.image_model);
         let prompt = format!(
-            "Generate an image of web page content as it would appear inside a browser viewport. \
+            "Generate a pixel-accurate screenshot of web page content as it would appear inside a browser viewport. \
+             Render it exactly as a real web browser would — correct fonts, colors, spacing, and layout. \
              Do NOT include any browser chrome (no address bar, no tabs, no window frame, no OS UI). \
-             Only render the page body content itself, edge to edge.\n\n\
-             The page content: {}",
+             Only render the page body content itself, edge to edge. \
+             Do NOT add any elements, watermarks, annotations, or decorations that are not described below.\n\n\
+             The page content to render: {}",
             args.page_description
         );
 
