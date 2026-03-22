@@ -179,7 +179,7 @@ function app() {
       if (!resp.ok) {
         resp = await fetch(`${this.apiBase()}`, { method: 'POST' });
       }
-      const data = await resp.json();
+      const data = await this.parseJSON(resp);
       this.currentImage = data.image;
       this.omnibarValue = data.url;
       this.connectSSE();
@@ -205,6 +205,15 @@ function app() {
       };
     },
 
+    async parseJSON(resp) {
+      const text = await resp.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw new Error(text.slice(0, 200) || `HTTP ${resp.status}`);
+      }
+    },
+
     async submitQuery() {
       if (!this.omnibarValue.trim() || this.loading) return;
       this.loading = true;
@@ -220,11 +229,11 @@ function app() {
           }),
         });
         if (!resp.ok) {
-          const err = await resp.json();
+          const err = await this.parseJSON(resp);
           alert('Error: ' + (err.error || 'Unknown error'));
           return;
         }
-        const data = await resp.json();
+        const data = await this.parseJSON(resp);
         this.currentImage = data.image;
         this.omnibarValue = data.url;
       } catch (e) {
@@ -253,11 +262,11 @@ function app() {
           }),
         });
         if (!resp.ok) {
-          const err = await resp.json();
+          const err = await this.parseJSON(resp);
           alert('Error: ' + (err.error || 'Unknown error'));
           return;
         }
-        const data = await resp.json();
+        const data = await this.parseJSON(resp);
         this.currentImage = data.image;
         this.omnibarValue = data.url;
       } catch (e) {
@@ -274,11 +283,11 @@ function app() {
           method: 'POST',
         });
         if (!resp.ok) {
-          const err = await resp.json();
+          const err = await this.parseJSON(resp);
           alert(err.error || 'Cannot go back');
           return;
         }
-        const data = await resp.json();
+        const data = await this.parseJSON(resp);
         this.currentImage = data.image;
         this.omnibarValue = data.url;
       } catch (e) {
@@ -300,11 +309,11 @@ function app() {
           }),
         });
         if (!resp.ok) {
-          const err = await resp.json();
+          const err = await this.parseJSON(resp);
           alert('Error: ' + (err.error || 'Unknown error'));
           return;
         }
-        const data = await resp.json();
+        const data = await this.parseJSON(resp);
         this.currentImage = data.image;
         this.omnibarValue = data.url;
       } catch (e) {
