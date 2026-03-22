@@ -67,6 +67,8 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
         _internal_call_id: &str,
         args: &str,
     ) -> ToolCallHookAction {
+        info!(tool = tool_name, "Tool call");
+        tracing::debug!(tool = tool_name, args, "Tool call args");
         let _ = self.tx.send(LogEntry {
             kind: "tool_call".into(),
             content: format!("{tool_name}({args})"),
@@ -87,6 +89,8 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
         } else {
             result.to_string()
         };
+        info!(tool = tool_name, result_len = result.len(), "Tool result");
+        tracing::debug!(tool = tool_name, result = truncated.as_str(), "Tool result content");
         let _ = self.tx.send(LogEntry {
             kind: "tool_result".into(),
             content: format!("{tool_name} → {truncated}"),
@@ -99,7 +103,6 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
         _prompt: &Message,
         response: &CompletionResponse<M::Response>,
     ) -> HookAction {
-        // Extract text content from the assistant response
         let mut texts = Vec::new();
         let mut tool_calls = Vec::new();
         for item in response.choice.iter() {
@@ -113,23 +116,29 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
         }
         if !texts.is_empty() {
             let text = texts.join(" ");
+            let text_len = text.len();
             let truncated = if text.len() > 500 {
                 format!("{}...", &text[..500])
             } else {
                 text
             };
+            info!(text_len, "Assistant text response");
+            tracing::debug!(text = truncated.as_str(), "Assistant text content");
             let _ = self.tx.send(LogEntry {
                 kind: "assistant".into(),
                 content: truncated,
             });
         }
         if !tool_calls.is_empty() {
+            let calls = tool_calls.join(", ");
+            info!(calls = calls.as_str(), "Assistant tool calls");
             let _ = self.tx.send(LogEntry {
                 kind: "assistant".into(),
-                content: format!("Agent calling: {}", tool_calls.join(", ")),
+                content: format!("Agent calling: {calls}"),
             });
         }
         if texts.is_empty() && tool_calls.is_empty() {
+            info!("Assistant responded with no text or tool calls");
             let _ = self.tx.send(LogEntry {
                 kind: "assistant".into(),
                 content: "Agent responded (no text content)".into(),
@@ -139,7 +148,6 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
     }
 
     async fn on_completion_call(&self, prompt: &Message, history: &[Message]) -> HookAction {
-        // Log what we're sending to the model
         let prompt_summary = match prompt {
             Message::User { content } => {
                 let parts: Vec<String> = content
@@ -161,6 +169,11 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
             }
             _ => "system/assistant message".to_string(),
         };
+        info!(
+            history_len = history.len(),
+            prompt = prompt_summary.as_str(),
+            "Sending completion request"
+        );
         let _ = self.tx.send(LogEntry {
             kind: "user".into(),
             content: format!(
