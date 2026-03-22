@@ -1,0 +1,4 @@
+[submodule "rig"]
+	path = rig
+	url = https://github.com/kevinastock/rig.git
+	branch = image-1-5

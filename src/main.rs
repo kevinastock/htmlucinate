@@ -20,7 +20,7 @@ pub struct Args {
     agent_model: String,
 
     /// Model to use for image generation
-    #[arg(long, default_value = "gpt-image-1", env = "IMAGE_MODEL")]
+    #[arg(long, default_value = "gpt-image-1.5", env = "IMAGE_MODEL")]
     image_model: String,
 }
 

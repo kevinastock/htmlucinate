@@ -10,7 +10,7 @@ clap = { version = "4", features = ["derive", "env"] }
 dashmap = "6"
 image = "0.25"
 reqwest = { version = "0.12", features = ["json"] }
-rig-core = { version = "0.33", features = ["image"] }
+rig-core = { path = "rig/rig/rig-core", features = ["image"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2.0.18"

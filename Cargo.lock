@@ -2257,8 +2257,6 @@ checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
 [[package]]
 name = "rig-core"
 version = "0.33.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a529b9b72f51a46a9ea87c9ba8031e36593de7a89461983f01d8c24462f9eb06"
 dependencies = [
  "as-any",
  "async-stream",
