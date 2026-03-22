@@ -125,7 +125,11 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
         result: &str,
     ) -> HookAction {
         info!(tool = tool_name, result_len = result.len(), "Tool result");
-        tracing::debug!(tool = tool_name, result = truncate(result, 500).as_str(), "Tool result content");
+        tracing::debug!(
+            tool = tool_name,
+            result = truncate(result, 500).as_str(),
+            "Tool result content"
+        );
 
         match tool_name {
             "update_page" => self.status("Image generated"),
@@ -156,7 +160,10 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
             let text = texts.join(" ");
             let text_len = text.len();
             info!(text_len, "Assistant text response");
-            tracing::debug!(text = truncate(&text, 500).as_str(), "Assistant text content");
+            tracing::debug!(
+                text = truncate(&text, 500).as_str(),
+                "Assistant text content"
+            );
             self.log("agent", truncate(&text, 300));
         }
         if !tool_calls.is_empty() {
@@ -191,7 +198,14 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
             "Sending completion request"
         );
         self.status("Thinking…");
-        self.log("send", format!("({} msgs) {}", history.len(), truncate(&prompt_summary, 200)));
+        self.log(
+            "send",
+            format!(
+                "({} msgs) {}",
+                history.len(),
+                truncate(&prompt_summary, 200)
+            ),
+        );
         HookAction::Continue
     }
 }
@@ -319,7 +333,10 @@ impl Tool for UpdatePage {
             args.url,
             args.page_description.len()
         );
-        tracing::debug!(description = args.page_description.as_str(), "update_page description");
+        tracing::debug!(
+            description = args.page_description.as_str(),
+            "update_page description"
+        );
 
         let (w, h) = pick_image_size(self.viewport);
 
@@ -450,7 +467,10 @@ pub async fn run_agent(
         })?;
 
     if !response.is_empty() {
-        tracing::debug!(response = truncate(&response, 500).as_str(), "Agent final response");
+        tracing::debug!(
+            response = truncate(&response, 500).as_str(),
+            "Agent final response"
+        );
         let _ = log_tx.send(LogEntry {
             kind: "agent".into(),
             content: truncate(&response, 300),
