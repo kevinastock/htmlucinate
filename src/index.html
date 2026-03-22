@@ -167,13 +167,17 @@ function app() {
     logEntries: [],
     eventSource: null,
 
+    apiBase() {
+      return `${window.location.origin}/api/session/${this.sessionId}`;
+    },
+
     async init() {
       // Session ID comes from the URL path (e.g., /abc12345)
       this.sessionId = window.location.pathname.slice(1);
       // Try to load existing session; if not found, create a new one
-      let resp = await fetch(`/api/session/${this.sessionId}`);
+      let resp = await fetch(`${this.apiBase()}`);
       if (!resp.ok) {
-        resp = await fetch(`/api/session/${this.sessionId}`, { method: 'POST' });
+        resp = await fetch(`${this.apiBase()}`, { method: 'POST' });
       }
       const data = await resp.json();
       this.currentImage = data.image;
@@ -183,7 +187,7 @@ function app() {
 
     connectSSE() {
       if (this.eventSource) this.eventSource.close();
-      this.eventSource = new EventSource(`/api/session/${this.sessionId}/log`);
+      this.eventSource = new EventSource(`${this.apiBase()}/log`);
       this.eventSource.onmessage = (e) => {
         try {
           const entry = JSON.parse(e.data);
@@ -206,7 +210,7 @@ function app() {
       this.loading = true;
       this.loadingStatus = 'Sending query...';
       try {
-        const resp = await fetch(`/api/session/${this.sessionId}/query`, {
+        const resp = await fetch(`${this.apiBase()}/query`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -239,7 +243,7 @@ function app() {
       this.loading = true;
       this.loadingStatus = 'Processing click...';
       try {
-        const resp = await fetch(`/api/session/${this.sessionId}/click`, {
+        const resp = await fetch(`${this.apiBase()}/click`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -266,7 +270,7 @@ function app() {
     async goBack() {
       if (this.loading) return;
       try {
-        const resp = await fetch(`/api/session/${this.sessionId}/back`, {
+        const resp = await fetch(`${this.apiBase()}/back`, {
           method: 'POST',
         });
         if (!resp.ok) {
@@ -287,7 +291,7 @@ function app() {
       this.loading = true;
       this.loadingStatus = 'Scrolling down...';
       try {
-        const resp = await fetch(`/api/session/${this.sessionId}/pagedown`, {
+        const resp = await fetch(`${this.apiBase()}/pagedown`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
