@@ -168,12 +168,12 @@ function app() {
     eventSource: null,
 
     apiBase() {
-      return `${window.location.origin}/api/session/${this.sessionId}`;
+      return `api/session/${this.sessionId}`;
     },
 
     async init() {
-      // Session ID comes from the URL path (e.g., /abc12345)
-      this.sessionId = window.location.pathname.slice(1);
+      // Session ID is the last path segment (works behind reverse proxies with subpaths)
+      this.sessionId = window.location.pathname.split('/').pop();
       // Try to load existing session; if not found, create a new one
       let resp = await fetch(`${this.apiBase()}`);
       if (!resp.ok) {
