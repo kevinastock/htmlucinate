@@ -9,6 +9,7 @@ base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 dashmap = "6"
 image = "0.25"
+rand = "0.9"
 reqwest = { version = "0.12", features = ["json"] }
 rig-core = { path = "rig/rig/rig-core", features = ["image"] }
 serde = { version = "1", features = ["derive"] }
@@ -19,4 +20,3 @@ tokio-stream = { version = "0.1.18", features = ["sync"] }
 tower-http = { version = "0.6", features = ["cors", "fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-uuid = { version = "1", features = ["v4", "serde"] }

@@ -168,9 +168,14 @@ function app() {
     eventSource: null,
 
     async init() {
-      const resp = await fetch('/api/session', { method: 'POST' });
+      // Session ID comes from the URL path (e.g., /abc12345)
+      this.sessionId = window.location.pathname.slice(1);
+      // Try to load existing session; if not found, create a new one
+      let resp = await fetch(`/api/session/${this.sessionId}`);
+      if (!resp.ok) {
+        resp = await fetch(`/api/session/${this.sessionId}`, { method: 'POST' });
+      }
       const data = await resp.json();
-      this.sessionId = data.session_id;
       this.currentImage = data.image;
       this.omnibarValue = data.url;
       this.connectSSE();

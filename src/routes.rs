@@ -3,16 +3,16 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, Sse};
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use rand::Rng;
 use rig::completion::message::Message;
 use serde::Deserialize;
 use tokio_stream::StreamExt;
 use tracing::info;
-use uuid::Uuid;
 
 use crate::AppState;
 use crate::agent;
@@ -73,8 +73,9 @@ static DEFAULT_IMAGE: std::sync::LazyLock<Arc<Vec<u8>>> =
 
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
-        .route("/", get(index_page))
-        .route("/api/session", post(create_session))
+        .route("/", get(root_redirect))
+        .route("/{id}", get(session_page))
+        .route("/api/session/{id}", get(get_session).post(create_session))
         .route("/api/session/{id}/query", post(handle_query))
         .route("/api/session/{id}/click", post(handle_click))
         .route("/api/session/{id}/pagedown", post(handle_pagedown))
@@ -85,10 +86,23 @@ pub fn router(state: Arc<AppState>) -> Router {
 }
 
 // ---------------------------------------------------------------------------
-// HTML page
+// HTML pages & redirects
 // ---------------------------------------------------------------------------
 
-async fn index_page() -> Html<&'static str> {
+fn generate_session_id() -> String {
+    const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let mut rng = rand::rng();
+    (0..8)
+        .map(|_| CHARSET[rng.random_range(0..CHARSET.len())] as char)
+        .collect()
+}
+
+async fn root_redirect() -> Redirect {
+    let id = generate_session_id();
+    Redirect::temporary(&format!("/{id}"))
+}
+
+async fn session_page() -> Html<&'static str> {
     Html(include_str!("index.html"))
 }
 
@@ -126,7 +140,7 @@ struct ActionResponse {
 
 #[derive(serde::Serialize)]
 struct SessionResponse {
-    session_id: Uuid,
+    session_id: String,
     url: String,
     image: String,
 }
@@ -140,11 +154,25 @@ struct ErrorResponse {
 // Handlers
 // ---------------------------------------------------------------------------
 
-async fn create_session(State(state): State<Arc<AppState>>) -> Json<SessionResponse> {
-    let id = Uuid::new_v4();
+async fn get_session(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<SessionResponse>, AppError> {
+    let session = state.sessions.get(&id).ok_or(AppError::SessionNotFound)?;
+    Ok(Json(SessionResponse {
+        session_id: id,
+        url: session.omnibar_url.clone(),
+        image: BASE64.encode(session.current_image.as_ref()),
+    }))
+}
+
+async fn create_session(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Json<SessionResponse> {
     let session = Session::new(DEFAULT_IMAGE.clone());
     let image_b64 = BASE64.encode(session.current_image.as_ref());
-    state.sessions.insert(id, session);
+    state.sessions.insert(id.clone(), session);
     info!("Created session {id}");
     Json(SessionResponse {
         session_id: id,
@@ -155,7 +183,7 @@ async fn create_session(State(state): State<Arc<AppState>>) -> Json<SessionRespo
 
 async fn handle_query(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
     Json(payload): Json<QueryPayload>,
 ) -> Result<Json<ActionResponse>, AppError> {
     let (history, log_tx, viewport) = {
@@ -207,7 +235,7 @@ async fn handle_query(
 
 async fn handle_click(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
     Json(payload): Json<ClickPayload>,
 ) -> Result<Json<ActionResponse>, AppError> {
     let (history, log_tx, viewport, click_image) = {
@@ -291,7 +319,7 @@ async fn handle_click(
 
 async fn handle_pagedown(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
     Json(payload): Json<PagedownPayload>,
 ) -> Result<Json<ActionResponse>, AppError> {
     let (history, log_tx, viewport) = {
@@ -345,7 +373,7 @@ async fn handle_pagedown(
 
 async fn handle_back(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
 ) -> Result<Json<ActionResponse>, AppError> {
     let mut session = state
         .sessions
@@ -362,7 +390,7 @@ async fn handle_back(
 
 async fn get_image(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
 ) -> Result<Response, AppError> {
     let session = state.sessions.get(&id).ok_or(AppError::SessionNotFound)?;
     Ok((
@@ -374,7 +402,7 @@ async fn get_image(
 
 async fn stream_log(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
 ) -> Result<Sse<impl tokio_stream::Stream<Item = Result<Event, std::convert::Infallible>>>, AppError>
 {
     let rx = {
@@ -399,7 +427,7 @@ async fn stream_log(
 
 /// Convert session's stored JSON messages back to rig Messages.
 fn rig_history_from_session(
-    session: &dashmap::mapref::one::RefMut<'_, Uuid, Session>,
+    session: &dashmap::mapref::one::RefMut<'_, String, Session>,
 ) -> Vec<Message> {
     session
         .messages
@@ -409,7 +437,7 @@ fn rig_history_from_session(
 }
 
 fn save_history_to_session(
-    session: &mut dashmap::mapref::one::RefMut<'_, Uuid, Session>,
+    session: &mut dashmap::mapref::one::RefMut<'_, String, Session>,
     history: &[Message],
 ) {
     session.messages = history

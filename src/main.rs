@@ -26,7 +26,7 @@ pub struct Args {
 
 pub struct AppState {
     pub args: Args,
-    pub sessions: dashmap::DashMap<uuid::Uuid, session::Session>,
+    pub sessions: dashmap::DashMap<String, session::Session>,
     pub openai_client: rig::providers::openai::Client,
 }
 
