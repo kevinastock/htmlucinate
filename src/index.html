@@ -7,31 +7,31 @@
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #eee; }
+  html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; }
 
   /* Navbar */
   .navbar {
     position: sticky; top: 0; z-index: 100;
     display: flex; align-items: center; gap: 8px;
     padding: 8px 12px;
-    background: #16213e; border-bottom: 1px solid #0f3460;
+    background: #fff; border-bottom: 1px solid #ccc;
     min-height: 48px;
   }
   .navbar button {
-    background: #0f3460; color: #e94560; border: 1px solid #e94560;
+    background: #f0f0f0; color: #333; border: 1px solid #ccc;
     border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 14px;
     white-space: nowrap; transition: background 0.15s;
   }
-  .navbar button:hover { background: #e94560; color: #fff; }
+  .navbar button:hover { background: #e0e0e0; }
   .navbar button:disabled { opacity: 0.4; cursor: not-allowed; }
 
   .omnibar {
     flex: 1; min-width: 0;
     padding: 8px 14px; border-radius: 20px;
-    border: 1px solid #0f3460; background: #0a0a1a; color: #eee;
+    border: 1px solid #ccc; background: #fff; color: #333;
     font-size: 15px; outline: none;
   }
-  .omnibar:focus { border-color: #e94560; }
+  .omnibar:focus { border-color: #4a90d9; }
 
   /* Hamburger (mobile) */
   .hamburger { display: none; font-size: 20px; }
@@ -40,7 +40,7 @@
   @media (max-width: 640px) {
     .hamburger { display: inline-block; }
     .nav-buttons { display: none; }
-    .nav-buttons.open { display: flex; position: absolute; top: 48px; left: 0; right: 0; background: #16213e; padding: 8px 12px; border-bottom: 1px solid #0f3460; flex-wrap: wrap; }
+    .nav-buttons.open { display: flex; position: absolute; top: 48px; left: 0; right: 0; background: #fff; padding: 8px 12px; border-bottom: 1px solid #ccc; flex-wrap: wrap; }
   }
 
   /* Body / image area */
@@ -56,40 +56,47 @@
   /* Loading overlay */
   .loading-overlay {
     position: absolute; inset: 0;
-    background: rgba(10, 10, 26, 0.85);
+    background: rgba(245, 245, 245, 0.9);
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     z-index: 50;
   }
   .spinner {
-    width: 48px; height: 48px; border: 4px solid #0f3460;
-    border-top-color: #e94560; border-radius: 50%;
+    width: 48px; height: 48px; border: 4px solid #ddd;
+    border-top-color: #4a90d9; border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .loading-overlay p { margin-top: 16px; color: #e94560; font-size: 14px; }
+  .loading-status {
+    margin-top: 16px; color: #555; font-size: 13px; text-align: center;
+    max-width: 400px; line-height: 1.4;
+  }
 
   /* Modal */
   .modal-backdrop {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200;
+    position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 200;
     display: flex; align-items: center; justify-content: center;
   }
   .modal {
-    background: #16213e; border: 1px solid #0f3460; border-radius: 12px;
-    width: 90vw; max-width: 700px; max-height: 80vh;
+    background: #fff; border: 1px solid #ccc; border-radius: 8px;
+    width: 90vw; max-width: 500px; max-height: 80vh;
     display: flex; flex-direction: column;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   }
   .modal-header {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 12px 16px; border-bottom: 1px solid #0f3460;
+    padding: 12px 16px; border-bottom: 1px solid #eee;
   }
-  .modal-header h2 { font-size: 16px; color: #e94560; }
+  .modal-header h2 { font-size: 15px; font-weight: 600; color: #333; }
   .modal-body {
     flex: 1; overflow-y: auto; padding: 12px 16px;
-    font-family: monospace; font-size: 12px; line-height: 1.6;
+    font-size: 13px; line-height: 1.5;
   }
-  .log-entry { margin-bottom: 6px; }
-  .log-entry .kind { color: #e94560; font-weight: bold; }
-  .log-entry .content { color: #ccc; }
+  .log-entry { margin-bottom: 4px; padding: 3px 0; border-bottom: 1px solid #f0f0f0; }
+  .log-entry .kind {
+    display: inline-block; font-size: 11px; font-weight: 600; text-transform: uppercase;
+    color: #888; min-width: 60px;
+  }
+  .log-entry .content { color: #333; word-break: break-word; }
 </style>
 </head>
 <body x-data="app()" x-init="init()">
@@ -114,7 +121,7 @@
   <template x-if="loading">
     <div class="loading-overlay">
       <div class="spinner"></div>
-      <p x-text="loadingStatus">Rendering page...</p>
+      <p class="loading-status" x-text="loadingStatus"></p>
     </div>
   </template>
   <img
@@ -130,17 +137,17 @@
     <div class="modal">
       <div class="modal-header">
         <h2>Agent Log</h2>
-        <button @click="showLog = false" style="background:none;border:none;color:#e94560;font-size:20px;cursor:pointer;">✕</button>
+        <button @click="showLog = false" style="background:none;border:none;color:#999;font-size:18px;cursor:pointer;">✕</button>
       </div>
       <div class="modal-body" x-ref="logBody">
         <template x-for="(entry, i) in logEntries" :key="i">
           <div class="log-entry">
-            <span class="kind" x-text="'[' + entry.kind + ']'"></span>
+            <span class="kind" x-text="entry.kind"></span>
             <span class="content" x-text="entry.content"></span>
           </div>
         </template>
         <template x-if="logEntries.length === 0">
-          <p style="color:#666;">No log entries yet.</p>
+          <p style="color:#999;">No log entries yet.</p>
         </template>
       </div>
     </div>
@@ -161,7 +168,6 @@ function app() {
     eventSource: null,
 
     async init() {
-      // Create a new session on page load
       const resp = await fetch('/api/session', { method: 'POST' });
       const data = await resp.json();
       this.sessionId = data.session_id;
@@ -177,8 +183,10 @@ function app() {
         try {
           const entry = JSON.parse(e.data);
           this.logEntries.push(entry);
-          this.loadingStatus = entry.content;
-          // Auto-scroll log if modal is open
+          // Only update loading status with short, user-friendly messages
+          if (entry.kind === 'status') {
+            this.loadingStatus = entry.content;
+          }
           this.$nextTick(() => {
             if (this.$refs.logBody) {
               this.$refs.logBody.scrollTop = this.$refs.logBody.scrollHeight;

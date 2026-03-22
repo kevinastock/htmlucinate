@@ -43,20 +43,49 @@ via update_page.
 Important guidelines:
 - Always call update_page exactly once per user action.
 - The page_description you give to update_page should be a rich, detailed visual description
-  of the web page as it would appear in a browser. Describe layout, colors, text content,
-  images, buttons, links, etc.
+  of ONLY the web page content area — the part inside a browser viewport. Do NOT describe
+  browser chrome (address bar, tabs, back/forward buttons, window frame, etc.) — that is
+  handled externally. Just describe the page body content itself.
 - Be creative and humorous — this is a parody browser. Pages should look plausible at first
   glance but can contain whimsical or absurd details.
-- Include realistic-looking UI elements (navigation bars, sidebars, ads, cookie banners, etc.)
+- Include realistic-looking page elements (navigation bars of the website, sidebars, ads,
+  cookie banners, content, images, etc.)
 "#;
 
 // ---------------------------------------------------------------------------
 // Logging hook
 // ---------------------------------------------------------------------------
 
+/// Sends concise "status" messages (shown in the loading overlay) and detailed
+/// "tool_call" / "tool_result" / "assistant" messages (shown in the log modal).
 #[derive(Clone)]
 pub struct LogHook {
     pub tx: broadcast::Sender<LogEntry>,
+}
+
+impl LogHook {
+    /// Send a short status update shown to the user in the loading overlay.
+    fn status(&self, msg: impl Into<String>) {
+        let _ = self.tx.send(LogEntry {
+            kind: "status".into(),
+            content: msg.into(),
+        });
+    }
+    /// Send a detailed log entry shown in the log modal.
+    fn log(&self, kind: &str, content: impl Into<String>) {
+        let _ = self.tx.send(LogEntry {
+            kind: kind.into(),
+            content: content.into(),
+        });
+    }
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() > max {
+        format!("{}…", &s[..max])
+    } else {
+        s.to_string()
+    }
 }
 
 impl<M: CompletionModel> PromptHook<M> for LogHook {
@@ -69,10 +98,21 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
     ) -> ToolCallHookAction {
         info!(tool = tool_name, "Tool call");
         tracing::debug!(tool = tool_name, args, "Tool call args");
-        let _ = self.tx.send(LogEntry {
-            kind: "tool_call".into(),
-            content: format!("{tool_name}({args})"),
-        });
+
+        // Concise status for loading overlay
+        let status = match tool_name {
+            "fetch_url" => {
+                let u = serde_json::from_str::<serde_json::Value>(args)
+                    .ok()
+                    .and_then(|v| v.get("url").and_then(|u| u.as_str()).map(String::from))
+                    .unwrap_or_default();
+                format!("Fetching: {}", truncate(&u, 60))
+            }
+            "update_page" => "Generating page image…".into(),
+            _ => format!("Calling {tool_name}…"),
+        };
+        self.status(&status);
+        self.log("tool", format!("{tool_name}({}", truncate(args, 200)));
         ToolCallHookAction::Continue
     }
 
@@ -84,17 +124,15 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
         _args: &str,
         result: &str,
     ) -> HookAction {
-        let truncated = if result.len() > 500 {
-            format!("{}... [truncated]", &result[..500])
-        } else {
-            result.to_string()
-        };
         info!(tool = tool_name, result_len = result.len(), "Tool result");
-        tracing::debug!(tool = tool_name, result = truncated.as_str(), "Tool result content");
-        let _ = self.tx.send(LogEntry {
-            kind: "tool_result".into(),
-            content: format!("{tool_name} → {truncated}"),
-        });
+        tracing::debug!(tool = tool_name, result = truncate(result, 500).as_str(), "Tool result content");
+
+        match tool_name {
+            "update_page" => self.status("Image generated"),
+            "fetch_url" => self.status(format!("Fetched {} bytes", result.len())),
+            _ => self.status(format!("{tool_name} done")),
+        }
+        self.log("result", format!("{tool_name} → {}", truncate(result, 300)));
         HookAction::Continue
     }
 
@@ -109,7 +147,7 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
             match item {
                 AssistantContent::Text(t) => texts.push(t.text.clone()),
                 AssistantContent::ToolCall(tc) => {
-                    tool_calls.push(format!("{}()", tc.function.name));
+                    tool_calls.push(tc.function.name.clone());
                 }
                 _ => {}
             }
@@ -117,32 +155,17 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
         if !texts.is_empty() {
             let text = texts.join(" ");
             let text_len = text.len();
-            let truncated = if text.len() > 500 {
-                format!("{}...", &text[..500])
-            } else {
-                text
-            };
             info!(text_len, "Assistant text response");
-            tracing::debug!(text = truncated.as_str(), "Assistant text content");
-            let _ = self.tx.send(LogEntry {
-                kind: "assistant".into(),
-                content: truncated,
-            });
+            tracing::debug!(text = truncate(&text, 500).as_str(), "Assistant text content");
+            self.log("agent", truncate(&text, 300));
         }
         if !tool_calls.is_empty() {
             let calls = tool_calls.join(", ");
             info!(calls = calls.as_str(), "Assistant tool calls");
-            let _ = self.tx.send(LogEntry {
-                kind: "assistant".into(),
-                content: format!("Agent calling: {calls}"),
-            });
+            self.status(format!("Agent using: {calls}"));
         }
         if texts.is_empty() && tool_calls.is_empty() {
             info!("Assistant responded with no text or tool calls");
-            let _ = self.tx.send(LogEntry {
-                kind: "assistant".into(),
-                content: "Agent responded (no text content)".into(),
-            });
         }
         HookAction::Continue
     }
@@ -153,14 +176,7 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
                 let parts: Vec<String> = content
                     .iter()
                     .map(|c| match c {
-                        UserContent::Text(t) => {
-                            let s = &t.text;
-                            if s.len() > 200 {
-                                format!("{}...", &s[..200])
-                            } else {
-                                s.clone()
-                            }
-                        }
+                        UserContent::Text(t) => truncate(&t.text, 100),
                         UserContent::Image(_) => "[image]".to_string(),
                         _ => "[other]".to_string(),
                     })
@@ -174,14 +190,8 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
             prompt = prompt_summary.as_str(),
             "Sending completion request"
         );
-        let _ = self.tx.send(LogEntry {
-            kind: "user".into(),
-            content: format!(
-                "Sending to model (history: {} msgs): {}",
-                history.len(),
-                prompt_summary
-            ),
-        });
+        self.status("Thinking…");
+        self.log("send", format!("({} msgs) {}", history.len(), truncate(&prompt_summary, 200)));
         HookAction::Continue
     }
 }
@@ -189,6 +199,8 @@ impl<M: CompletionModel> PromptHook<M> for LogHook {
 // ---------------------------------------------------------------------------
 // Tools
 // ---------------------------------------------------------------------------
+
+// -- fetch_url --------------------------------------------------------------
 
 #[derive(Deserialize, Serialize)]
 pub struct FetchUrl;
@@ -243,6 +255,8 @@ impl Tool for FetchUrl {
     }
 }
 
+// -- update_page ------------------------------------------------------------
+
 #[derive(Clone)]
 pub struct UpdatePage {
     pub used: Arc<tokio::sync::Mutex<bool>>,
@@ -250,6 +264,7 @@ pub struct UpdatePage {
     pub openai_client: openai::Client,
     pub image_model: String,
     pub viewport: (u32, u32),
+    pub log_tx: broadcast::Sender<LogEntry>,
 }
 
 #[derive(Clone)]
@@ -273,7 +288,7 @@ impl Tool for UpdatePage {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: "update_page".into(),
-            description: "Render the web page the user sees. Provide the URL for the omnibar and a detailed visual description of the page. This calls an image generator to produce the screenshot. You must call this exactly once per user action.".into(),
+            description: "Render the web page the user sees. Provide the URL for the omnibar and a detailed visual description of the page body content (NOT browser chrome — just the page itself). This calls an image generator to produce the screenshot. You must call this exactly once per user action.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -283,7 +298,7 @@ impl Tool for UpdatePage {
                     },
                     "page_description": {
                         "type": "string",
-                        "description": "A detailed visual description of the entire web page as it would appear rendered in a browser. Include layout, colors, text, images, buttons, navigation elements, etc."
+                        "description": "A detailed visual description of the web page BODY content as it would appear in the browser viewport. Describe layout, colors, text, images, buttons, navigation elements, etc. Do NOT describe browser chrome (address bar, tabs, window frame) — only the page content itself."
                     }
                 },
                 "required": ["url", "page_description"]
@@ -304,14 +319,23 @@ impl Tool for UpdatePage {
             args.url,
             args.page_description.len()
         );
+        tracing::debug!(description = args.page_description.as_str(), "update_page description");
 
         let (w, h) = pick_image_size(self.viewport);
 
         let image_model = self.openai_client.image_generation_model(&self.image_model);
         let prompt = format!(
-            "A screenshot of a web browser's page content area showing: {}",
+            "Generate an image of web page content as it would appear inside a browser viewport. \
+             Do NOT include any browser chrome (no address bar, no tabs, no window frame, no OS UI). \
+             Only render the page body content itself, edge to edge.\n\n\
+             The page content: {}",
             args.page_description
         );
+
+        let _ = self.log_tx.send(LogEntry {
+            kind: "status".into(),
+            content: "Generating page image…".into(),
+        });
 
         let response = image_model
             .image_generation_request()
@@ -324,16 +348,14 @@ impl Tool for UpdatePage {
 
         let image_bytes = response.image;
 
-        // Save generated image to debug/ for inspection
+        // Save clean (unannotated) generated image to debug/
         let debug_dir = std::path::Path::new("debug");
         if std::fs::create_dir_all(debug_dir).is_ok() {
-            let filename = format!(
-                "page_{}.png",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs()
-            );
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let filename = format!("page_{ts}.png");
             if let Err(e) = std::fs::write(debug_dir.join(&filename), &image_bytes) {
                 warn!("Failed to save debug page image: {e}");
             } else {
@@ -394,6 +416,7 @@ pub async fn run_agent(
         openai_client: openai_client.clone(),
         image_model: image_model.to_string(),
         viewport,
+        log_tx: log_tx.clone(),
     };
     let result_handle = update_page.result.clone();
 
@@ -407,8 +430,8 @@ pub async fn run_agent(
         .build();
 
     let _ = log_tx.send(LogEntry {
-        kind: "assistant".into(),
-        content: "Agent started processing...".into(),
+        kind: "status".into(),
+        content: "Agent started…".into(),
     });
 
     let response: String = agent
@@ -426,16 +449,11 @@ pub async fn run_agent(
             AgentRunError::Agent(e.to_string())
         })?;
 
-    // Log the final text response from the agent
     if !response.is_empty() {
-        let truncated = if response.len() > 500 {
-            format!("{}...", &response[..500])
-        } else {
-            response.clone()
-        };
+        tracing::debug!(response = truncate(&response, 500).as_str(), "Agent final response");
         let _ = log_tx.send(LogEntry {
-            kind: "assistant".into(),
-            content: format!("Final response: {truncated}"),
+            kind: "agent".into(),
+            content: truncate(&response, 300),
         });
     }
 
@@ -443,8 +461,8 @@ pub async fn run_agent(
     match result {
         Some(r) => {
             let _ = log_tx.send(LogEntry {
-                kind: "assistant".into(),
-                content: format!("Page rendered: {}", r.url),
+                kind: "status".into(),
+                content: format!("Done — {}", r.url),
             });
             Ok((r, history))
         }

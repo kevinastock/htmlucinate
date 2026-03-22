@@ -27,34 +27,35 @@ fn generate_default_image() -> Vec<u8> {
     let height = 1024u32;
     let mut img = image::RgbaImage::new(width, height);
 
+    // Light neutral background with a subtle warm gradient
     for y in 0..height {
         for x in 0..width {
-            let r = (180.0 + 40.0 * (x as f64 / width as f64)) as u8;
-            let g = (160.0 + 60.0 * (y as f64 / height as f64)) as u8;
-            let b = (220.0 - 30.0 * (x as f64 / width as f64)) as u8;
+            let r = (245.0 - 10.0 * (y as f64 / height as f64)) as u8;
+            let g = (245.0 - 8.0 * (y as f64 / height as f64)) as u8;
+            let b = (248.0 - 5.0 * (y as f64 / height as f64)) as u8;
             img.put_pixel(x, y, image::Rgba([r, g, b, 255]));
         }
     }
 
-    // Draw a simple centered rectangle as a "card"
+    // Draw a centered card
     let card_x = width / 4;
     let card_y = height / 4;
     let card_w = width / 2;
     let card_h = height / 2;
     for y in card_y..(card_y + card_h) {
         for x in card_x..(card_x + card_w) {
-            img.put_pixel(x, y, image::Rgba([255, 255, 255, 230]));
+            img.put_pixel(x, y, image::Rgba([255, 255, 255, 255]));
         }
     }
 
-    // Draw border on the card
+    // Card border — light gray
     for x in card_x..(card_x + card_w) {
-        img.put_pixel(x, card_y, image::Rgba([100, 100, 200, 255]));
-        img.put_pixel(x, card_y + card_h - 1, image::Rgba([100, 100, 200, 255]));
+        img.put_pixel(x, card_y, image::Rgba([200, 200, 200, 255]));
+        img.put_pixel(x, card_y + card_h - 1, image::Rgba([200, 200, 200, 255]));
     }
     for y in card_y..(card_y + card_h) {
-        img.put_pixel(card_x, y, image::Rgba([100, 100, 200, 255]));
-        img.put_pixel(card_x + card_w - 1, y, image::Rgba([100, 100, 200, 255]));
+        img.put_pixel(card_x, y, image::Rgba([200, 200, 200, 255]));
+        img.put_pixel(card_x + card_w - 1, y, image::Rgba([200, 200, 200, 255]));
     }
 
     let mut buf = std::io::Cursor::new(Vec::new());
